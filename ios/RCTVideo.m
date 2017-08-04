@@ -9,7 +9,6 @@ static NSString *const playbackLikelyToKeepUpKeyPath = @"playbackLikelyToKeepUp"
 static NSString *const playbackBufferEmptyKeyPath = @"playbackBufferEmpty";
 static NSString *const readyForDisplayKeyPath = @"readyForDisplay";
 static NSString *const playbackRate = @"rate";
-static NSString *const timedMetadata = @"timedMetadata";
 
 @implementation RCTVideo
 {
@@ -43,7 +42,6 @@ static NSString *const timedMetadata = @"timedMetadata";
   BOOL _playbackStalled;
   BOOL _playInBackground;
   BOOL _playWhenInactive;
-  NSString * _ignoreSilentSwitch;
   NSString * _resizeMode;
   BOOL _fullscreenPlayerPresented;
   UIViewController * _presentingViewController;
@@ -67,7 +65,6 @@ static NSString *const timedMetadata = @"timedMetadata";
     _playerBufferEmpty = YES;
     _playInBackground = false;
     _playWhenInactive = false;
-    _ignoreSilentSwitch = @"inherit"; // inherit, ignore, obey
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(applicationWillResignActive:)
@@ -120,7 +117,7 @@ static NSString *const timedMetadata = @"timedMetadata";
     {
         return [playerItem seekableTimeRanges].firstObject.CMTimeRangeValue;
     }
-
+    
     return (kCMTimeRangeZero);
 }
 
@@ -141,7 +138,6 @@ static NSString *const timedMetadata = @"timedMetadata";
 {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   [self removePlayerItemObservers];
-  [self removePlayerLayer];
   [_player removeObserver:self forKeyPath:playbackRate context:nil];
 }
 
@@ -230,7 +226,6 @@ static NSString *const timedMetadata = @"timedMetadata";
   [_playerItem addObserver:self forKeyPath:statusKeyPath options:0 context:nil];
   [_playerItem addObserver:self forKeyPath:playbackBufferEmptyKeyPath options:0 context:nil];
   [_playerItem addObserver:self forKeyPath:playbackLikelyToKeepUpKeyPath options:0 context:nil];
-  [_playerItem addObserver:self forKeyPath:timedMetadata options:NSKeyValueObservingOptionNew context:nil];
   _playerItemObserversSet = YES;
 }
 
@@ -243,7 +238,6 @@ static NSString *const timedMetadata = @"timedMetadata";
     [_playerItem removeObserver:self forKeyPath:statusKeyPath];
     [_playerItem removeObserver:self forKeyPath:playbackBufferEmptyKeyPath];
     [_playerItem removeObserver:self forKeyPath:playbackLikelyToKeepUpKeyPath];
-    [_playerItem removeObserver:self forKeyPath:timedMetadata];
     _playerItemObserversSet = NO;
   }
 }
@@ -303,9 +297,11 @@ static NSString *const timedMetadata = @"timedMetadata";
   NSString *uri = [source objectForKey:@"uri"];
   NSString *type = [source objectForKey:@"type"];
 
+    NSString *str = [[NSBundle mainBundle] pathForResource:uri ofType:[uri isEqualToString:@"somintro"] ? @"mp4" : @"mp3"];
+    
   NSURL *url = (isNetwork || isAsset) ?
     [NSURL URLWithString:uri] :
-    [[NSURL alloc] initFileURLWithPath:[[NSBundle mainBundle] pathForResource:uri ofType:type]];
+    [[NSURL alloc] initFileURLWithPath:str];
 
   if (isNetwork) {
     NSArray *cookies = [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookies];
@@ -323,34 +319,6 @@ static NSString *const timedMetadata = @"timedMetadata";
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
 {
    if (object == _playerItem) {
-
-    // When timeMetadata is read the event onTimedMetadata is triggered
-    if ([keyPath isEqualToString: timedMetadata])
-    {
-
-
-        NSArray<AVMetadataItem *> *items = [change objectForKey:@"new"];
-        if (items && ![items isEqual:[NSNull null]] && items.count > 0) {
-
-            NSMutableArray *array = [NSMutableArray new];
-            for (AVMetadataItem *item in items) {
-
-                NSString *value = item.value;
-                NSString *identifier = item.identifier;
-
-                if (![value isEqual: [NSNull null]]) {
-                    NSDictionary *dictionary = [[NSDictionary alloc] initWithObjects:@[value, identifier] forKeys:@[@"value", @"identifier"]];
-
-                    [array addObject:dictionary];
-                }
-            }
-
-            self.onTimedMetadata(@{
-                                   @"target": self.reactTag,
-                                   @"metadata": array
-                                   });
-        }
-    }
 
     if ([keyPath isEqualToString:statusKeyPath]) {
       // Handle player item status change.
@@ -379,7 +347,7 @@ static NSString *const timedMetadata = @"timedMetadata";
           } else
             orientation = @"portrait";
         }
-
+          
       if(self.onVideoLoad) {
           self.onVideoLoad(@{@"duration": [NSNumber numberWithFloat:duration],
                              @"currentTime": [NSNumber numberWithFloat:CMTimeGetSeconds(_playerItem.currentTime)],
@@ -500,23 +468,12 @@ static NSString *const timedMetadata = @"timedMetadata";
   _playWhenInactive = playWhenInactive;
 }
 
-- (void)setIgnoreSilentSwitch:(NSString *)ignoreSilentSwitch
-{
-  _ignoreSilentSwitch = ignoreSilentSwitch;
-  [self applyModifiers];
-}
-
 - (void)setPaused:(BOOL)paused
 {
   if (paused) {
     [_player pause];
     [_player setRate:0.0];
   } else {
-    if([_ignoreSilentSwitch isEqualToString:@"ignore"]) {
-      [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:nil];
-    } else if([_ignoreSilentSwitch isEqualToString:@"obey"]) {
-      [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryAmbient error:nil];
-    }
     [_player play];
     [_player setRate:_rate];
   }
@@ -546,12 +503,9 @@ static NSString *const timedMetadata = @"timedMetadata";
     CMTime current = item.currentTime;
     // TODO figure out a good tolerance level
     CMTime tolerance = CMTimeMake(1000, timeScale);
-    BOOL wasPaused = _paused;
 
     if (CMTimeCompare(current, cmSeekTime) != 0) {
-      if (!wasPaused) [_player pause];
       [_player seekToTime:cmSeekTime toleranceBefore:tolerance toleranceAfter:tolerance completionHandler:^(BOOL finished) {
-        if (!wasPaused) [_player play];
         if(self.onVideoSeek) {
             self.onVideoSeek(@{@"currentTime": [NSNumber numberWithFloat:CMTimeGetSeconds(item.currentTime)],
                                @"seekTime": [NSNumber numberWithFloat:seekTime],
@@ -736,7 +690,6 @@ static NSString *const timedMetadata = @"timedMetadata";
     {
         _fullscreenPlayerPresented = false;
         _presentingViewController = nil;
-        _playerViewController = nil;
         [self applyModifiers];
         if(self.onVideoFullscreenPlayerDidDismiss) {
             self.onVideoFullscreenPlayerDidDismiss(@{@"target": self.reactTag});

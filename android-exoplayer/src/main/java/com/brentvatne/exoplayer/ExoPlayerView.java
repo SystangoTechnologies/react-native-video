@@ -4,7 +4,6 @@ import android.annotation.TargetApi;
 import android.content.Context;
 import android.support.v4.content.ContextCompat;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.SurfaceView;
 import android.view.TextureView;
@@ -15,11 +14,8 @@ import android.widget.FrameLayout;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlaybackException;
 import com.google.android.exoplayer2.ExoPlayer;
-import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.Timeline;
-import com.google.android.exoplayer2.metadata.Metadata;
-import com.google.android.exoplayer2.metadata.MetadataRenderer;
 import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.text.Cue;
 import com.google.android.exoplayer2.text.TextRenderer;
@@ -100,7 +96,6 @@ public final class ExoPlayerView extends FrameLayout {
             this.player.setVideoListener(null);
             this.player.removeListener(componentListener);
             this.player.setVideoSurface(null);
-            this.player.setMetadataOutput(componentListener);
         }
         this.player = player;
         shutterView.setVisibility(VISIBLE);
@@ -113,7 +108,6 @@ public final class ExoPlayerView extends FrameLayout {
             player.setVideoListener(componentListener);
             player.addListener(componentListener);
             player.setTextOutput(componentListener);
-            player.setMetadataOutput(componentListener);
         }
     }
 
@@ -167,7 +161,7 @@ public final class ExoPlayerView extends FrameLayout {
     }
 
     private final class ComponentListener implements SimpleExoPlayer.VideoListener,
-            TextRenderer.Output, ExoPlayer.EventListener, MetadataRenderer.Output {
+            TextRenderer.Output, ExoPlayer.EventListener {
 
         // TextRenderer.Output implementation
 
@@ -226,15 +220,7 @@ public final class ExoPlayerView extends FrameLayout {
             updateForCurrentTrackSelections();
         }
 
-        @Override
-        public void onPlaybackParametersChanged(PlaybackParameters params) {
-            // Do nothing
-        }
-
-        @Override
-        public void onMetadata(Metadata metadata) {
-            Log.d("onMetadata", "onMetadata");
-        }
     }
 
 }
+
